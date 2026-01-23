@@ -12,6 +12,11 @@ local function isEnabled()
 end
 
 local function initData(mountId)
+    -- HARD GUARDS (required in modern WoW)
+    if not mountId or type(mountId) ~= "number" or issecurevariable(mountId) then
+        return nil
+    end
+
     if not MJETrackingData[mountId] then
         MJETrackingData[mountId] = {
             [INDEX_USE_COUNT] = 0,
@@ -41,10 +46,17 @@ function ADDON:SetLearnedDate(mountId, year, month, day)
 end
 
 local function updateDistance(mountId)
+    if not mountId or type(mountId) ~= "number" or issecurevariable(mountId) then
+        return
+    end
+
     if MJETrackingData[mountId] then
         local blob = MJETrackingData[mountId]
         local currentPosX, currentPosY, currentZone = HBD:GetPlayerZonePosition()
-        local distance = HBD:GetZoneDistance(startZone, startPositionX, startPositionY, currentZone, currentPosX, currentPosY)
+        local distance = HBD:GetZoneDistance(
+            startZone, startPositionX, startPositionY,
+            currentZone, currentPosX, currentPosY
+        )
         if distance then
             blob[INDEX_TRAVEL_DISTANCE] = blob[INDEX_TRAVEL_DISTANCE] + distance
         end
@@ -55,22 +67,33 @@ end
 ADDON.Events:RegisterCallback("OnMountUp", function(_, mount, isOnLogin)
     if isEnabled() then
         local blob = initData(mount)
+        if not blob then return end
+
         blob[INDEX_LAST_USE_TIME] = GetServerTime()
         if not isOnLogin then
             blob[INDEX_USE_COUNT] = blob[INDEX_USE_COUNT] + 1
         end
+
         startPositionX, startPositionY, startZone = HBD:GetPlayerZonePosition()
         travelTicker = C_Timer.NewTicker(5, function()
             updateDistance(mount)
         end)
     end
 end, "tracking")
+
 ADDON.Events:RegisterCallback("OnMountDown", function(_, mount)
     if isEnabled() then
         local blob = initData(mount)
-        blob[INDEX_TRAVEL_TIME] = blob[INDEX_TRAVEL_TIME] + (GetServerTime() - blob[INDEX_LAST_USE_TIME])
+        if not blob then return end
 
-        travelTicker:Cancel()
+        blob[INDEX_TRAVEL_TIME] =
+            blob[INDEX_TRAVEL_TIME] + (GetServerTime() - (blob[INDEX_LAST_USE_TIME] or GetServerTime()))
+
+        if travelTicker then
+            travelTicker:Cancel()
+            travelTicker = nil
+        end
+
         updateDistance(mount)
         startZone, startPositionX, startPositionY = nil, nil, nil
     end
